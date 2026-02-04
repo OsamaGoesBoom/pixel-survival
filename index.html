@@ -2,143 +2,181 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>NEON SOUL // DECRYPTOR</title>
+    <title>NEON BREAKER // HACKER MODE</title>
     <style>
-        :root { --main: #ff00ff; --cyber: #00f2ff; --bg: #050508; }
+        :root { --neon: #00f2ff; --pink: #ff00ff; --bg: #050508; }
         body { background: var(--bg); color: white; margin: 0; font-family: 'Courier New', monospace; overflow: hidden; }
         
-        /* Anime UI Overlay */
-        #ui-container { position: absolute; inset: 0; pointer-events: none; z-index: 10; border: 20px solid transparent; transition: 0.5s; }
-        .corner-ui { position: absolute; width: 150px; height: 150px; border: 2px solid var(--cyber); }
-        .top-left { top: 20px; left: 20px; border-right: none; border-bottom: none; }
-        .bottom-right { bottom: 20px; right: 20px; border-left: none; border-top: none; }
+        #game-container { position: relative; width: 100vw; height: 100vh; }
+        canvas { display: block; }
 
-        /* Character Portrait */
-        #avatar-box {
-            position: absolute; bottom: 0; left: 50px; width: 300px; height: 400px;
-            background: linear-gradient(to top, var(--main), transparent);
-            clip-path: polygon(0 0, 100% 20%, 100% 100%, 0% 100%);
-            display: flex; align-items: flex-end; justify-content: center;
-            transition: 0.5s; transform: translateY(100%);
+        /* Terminal Overlay */
+        #terminal {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 400px; background: rgba(0, 0, 0, 0.9); border: 2px solid var(--neon);
+            padding: 30px; display: none; text-align: center; z-index: 100;
+            box-shadow: 0 0 50px var(--neon);
         }
-        #avatar-box.active { transform: translateY(0); }
-        .avatar-text { font-size: 80px; filter: drop-shadow(0 0 10px white); }
-
-        /* Dialogue */
-        #dialogue {
-            position: absolute; bottom: 40px; right: 50px; width: 500px;
-            background: rgba(0,0,0,0.9); border-left: 5px solid var(--main);
-            padding: 20px; display: none; pointer-events: all;
+        #prompt { color: var(--pink); font-size: 1.5rem; margin-bottom: 10px; }
+        #typing-input { 
+            background: transparent; border: none; border-bottom: 2px solid var(--neon);
+            color: white; font-family: inherit; font-size: 1.5rem; text-align: center;
+            outline: none; width: 100%;
         }
 
-        canvas { display: block; filter: saturate(1.5) contrast(1.2); }
+        /* Glitch UI */
+        .hud { position: absolute; top: 20px; width: 100%; display: flex; justify-content: space-around; pointer-events: none; }
+        .glitch-text { text-shadow: 2px 0 var(--pink), -2px 0 var(--neon); animation: glitch 1s infinite; }
+        @keyframes glitch { 0% { transform: translate(0); } 20% { transform: translate(-2px, 2px); } 40% { transform: translate(-2px, -2px); } 60% { transform: translate(2px, 2px); } 80% { transform: translate(2px, -2px); } 100% { transform: translate(0); } }
     </style>
 </head>
 <body>
 
-    <div id="ui-container">
-        <div class="corner-ui top-left"></div>
-        <div class="corner-ui bottom-right"></div>
-        
-        <div class="hud" style="padding: 40px;">
-            <div style="color: var(--cyber); font-size: 24px; font-weight: bold;">LINK_SYNC: 98%</div>
-            <div id="score-display">DATA: 0000</div>
-        </div>
-
-        <div id="avatar-box">
-            <span class="avatar-text">👩‍🎤</span> </div>
-
-        <div id="dialogue">
-            <div style="color: var(--main); font-weight: bold;">AI_CHANNEL // HARU</div>
-            <div id="text-content">"Listen up! The firewall is closing in. Don't touch the red sectors!"</div>
-            <button onclick="startGame()" style="margin-top:10px; background:var(--main); border:none; color:white; padding:5px 15px; cursor:pointer;">CONNECT</button>
-        </div>
+<div id="game-container">
+    <div class="hud">
+        <div class="glitch-text">SYSTEM_STATUS: <span id="mode">STABLE</span></div>
+        <div>SCORE: <span id="score">0</span></div>
     </div>
 
-    <canvas id="gameCanvas"></canvas>
+    <div id="terminal">
+        <div id="prompt">TYPE: OVERRIDE</div>
+        <input type="text" id="typing-input" autocomplete="off">
+        <div style="font-size: 10px; margin-top: 10px; color: #555;">[SECURE TUNNEL ACTIVE]</div>
+    </div>
+
+    <canvas id="canvas"></canvas>
+</div>
 
 <script>
-const canvas = document.getElementById('gameCanvas');
+const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
+const term = document.getElementById('terminal');
+const input = document.getElementById('typing-input');
+const promptEl = document.getElementById('prompt');
+
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-let player = { x: canvas.width/2, y: canvas.height/2, size: 8, vx: 0, vy: 0 };
+let player = { x: canvas.width/2, y: canvas.height/2, size: 10, speed: 5 };
 let enemies = [];
-let frames = 0;
+let isHacking = false;
 let score = 0;
-let active = false;
-
-// Show Anime Intro
-setTimeout(() => {
-    document.getElementById('avatar-box').classList.add('active');
-    document.getElementById('dialogue').style.display = 'block';
-}, 500);
-
-function startGame() {
-    document.getElementById('dialogue').style.display = 'none';
-    active = true;
-    spawnEnemy();
-}
+let currentCommand = "";
+let commands = ["OVERRIDE", "BYPASS", "DECRYPT", "TERMINATE", "PURGE"];
+let shockwave = { r: 0, active: false };
 
 function spawnEnemy() {
-    if(!active) return;
+    if (isHacking) return;
     enemies.push({
         x: Math.random() * canvas.width,
-        y: -20,
-        speed: 3 + Math.random() * 5
+        y: Math.random() < 0.5 ? -20 : canvas.height + 20,
+        vx: (Math.random() - 0.5) * 4,
+        vy: (Math.random() - 0.5) * 4
     });
-    setTimeout(spawnEnemy, 1000 - (score * 5));
+}
+
+// Every 5 seconds, force a hack
+setInterval(() => {
+    if (!isHacking) startHack();
+}, 5000);
+
+function startHack() {
+    isHacking = true;
+    term.style.display = 'block';
+    currentCommand = commands[Math.floor(Math.random() * commands.length)];
+    promptEl.innerText = "TYPE: " + currentCommand;
+    input.value = "";
+    input.focus();
+    document.getElementById('mode').innerText = "BREACH_DETECTED";
+}
+
+input.addEventListener('input', () => {
+    if (input.value.toUpperCase() === currentCommand) {
+        completeHack();
+    }
+});
+
+function completeHack() {
+    isHacking = false;
+    term.style.display = 'none';
+    shockwave.active = true;
+    shockwave.r = 0;
+    shockwave.x = player.x;
+    shockwave.y = player.y;
+    score += 500;
+    document.getElementById('mode').innerText = "STABLE";
 }
 
 function update() {
-    if(!active) return;
+    if (!isHacking) {
+        // Player follows mouse
+        canvas.onmousemove = (e) => {
+            player.x += (e.clientX - player.x) * 0.15;
+            player.y += (e.clientY - player.y) * 0.15;
+        };
 
-    // Movement (Mouse follow for that smooth anime "Slash" feel)
-    window.onmousemove = (e) => {
-        player.x += (e.clientX - player.x) * 0.1;
-        player.y += (e.clientY - player.y) * 0.1;
-    };
+        enemies.forEach((en, i) => {
+            en.x += en.vx; en.y += en.vy;
+            // Wrap screen
+            if (en.x < 0) en.x = canvas.width;
+            if (en.x > canvas.width) en.x = 0;
+            if (en.y < 0) en.y = canvas.height;
+            if (en.y > canvas.height) en.y = 0;
 
-    enemies.forEach((en, i) => {
-        en.y += en.speed;
-        if(en.y > canvas.height) {
-            enemies.splice(i, 1);
-            score += 10;
-            document.getElementById('score-display').innerText = "DATA: " + score.toString().padStart(4, '0');
-        }
+            // Collision
+            let d = Math.hypot(player.x - en.x, player.y - en.y);
+            if (d < 15) {
+                alert("SYSTEM FAILURE. Final Score: " + score);
+                location.reload();
+            }
+        });
+    }
 
-        // Collision
-        let d = Math.hypot(player.x - en.x, player.y - en.y);
-        if(d < 15) location.reload();
-    });
+    if (shockwave.active) {
+        shockwave.r += 20;
+        enemies = enemies.filter(en => {
+            let d = Math.hypot(shockwave.x - en.x, shockwave.y - en.y);
+            return d > shockwave.r;
+        });
+        if (shockwave.r > canvas.width) shockwave.active = false;
+    }
+
+    if (Math.random() < 0.05) spawnEnemy();
 }
 
 function draw() {
-    // Cyberpunk Grid Background
-    ctx.fillStyle = "#050508";
+    // Background
+    ctx.fillStyle = isHacking ? "#110011" : "#050508";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
-    ctx.strokeStyle = "#111";
-    for(let i=0; i<canvas.width; i+=40) {
-        ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke();
+
+    // Shockwave effect
+    if (shockwave.active) {
+        ctx.strokeStyle = "white";
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.arc(shockwave.x, shockwave.y, shockwave.r, 0, Math.PI * 2);
+        ctx.stroke();
+        
+        // Flash effect
+        ctx.fillStyle = "rgba(255, 255, 255, 0.1)";
+        ctx.fillRect(0,0, canvas.width, canvas.height);
     }
 
-    // Draw Player (Neon Trail)
-    ctx.shadowBlur = 20;
-    ctx.shadowColor = "#ff00ff";
-    ctx.fillStyle = "#fff";
-    ctx.fillRect(player.x-5, player.y-5, 10, 10);
+    // Player
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = "white";
+    ctx.fillStyle = "white";
+    ctx.fillRect(player.x - 5, player.y - 5, 10, 10);
 
-    // Draw Enemies (Falling Glitches)
-    ctx.shadowColor = "#00f2ff";
-    ctx.fillStyle = "#00f2ff";
-    enemies.forEach(en => {
-        ctx.fillRect(en.x, en.y, 4, 20);
-    });
+    // Enemies
+    ctx.shadowColor = varColor('--pink');
+    ctx.fillStyle = varColor('--pink');
+    enemies.forEach(en => ctx.fillRect(en.x - 3, en.y - 3, 6, 6));
     
     ctx.shadowBlur = 0;
 }
+
+function varColor(name) { return getComputedStyle(document.documentElement).getPropertyValue(name); }
 
 function loop() {
     update();
