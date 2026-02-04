@@ -1,85 +1,139 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Pixel Survival</title>
+    <title>Pixel Survival: Advanced</title>
     <style>
-        body { background: #111; color: white; display: flex; flex-direction: column; align-items: center; font-family: sans-serif; }
-        canvas { border: 2px solid #555; background: #000; }
+        body { background: #050505; color: #00ffcc; display: flex; flex-direction: column; align-items: center; font-family: 'Courier New', monospace; overflow: hidden; }
+        canvas { border: 1px solid #00ffcc; box-shadow: 0 0 20px #00ffcc44; background: #000; cursor: none; }
+        .stats { position: absolute; top: 10px; left: 10px; pointer-events: none; }
     </style>
 </head>
 <body>
-    <h1>PIXEL SURVIVAL</h1>
-    <canvas id="gameCanvas" width="600" height="600"></canvas>
-    <p>Use WASD to move. Survive the wave!</p>
+    <div class="stats">
+        WAVE: <span id="waveTxt">1</span> | SCORE: <span id="scoreTxt">0</span>
+    </div>
+    <canvas id="gameCanvas"></canvas>
 
 <script>
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
+canvas.width = window.innerWidth * 0.8;
+canvas.height = window.innerHeight * 0.8;
 
-let player = { x: 300, y: 300, size: 8, speed: 4, color: '#00ff00' };
+// Game State
+let player = { 
+    x: canvas.width/2, y: canvas.height/2, 
+    vx: 0, vy: 0, 
+    accel: 0.5, friction: 0.96, 
+    size: 6, color: '#00ffcc' 
+};
 let enemies = [];
-let arenaSize = 600;
+let particles = [];
+let arenaShrink = 0;
+let frame = 0;
 let wave = 1;
 let score = 0;
+let keys = {};
 
-function spawnEnemy() {
-    // Basic AI Pathfinding: They just head toward player.x, player.y
-    enemies.push({
-        x: Math.random() > 0.5 ? 0 : arenaSize,
-        y: Math.random() * arenaSize,
-        size: 6,
-        speed: 1.5 + (wave * 0.2)
-    });
+// Input Tracking
+window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
+window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+function spawnWave() {
+    for(let i = 0; i < wave * 3; i++) {
+        enemies.push({
+            x: Math.random() * canvas.width,
+            y: Math.random() > 0.5 ? 0 : canvas.height,
+            vx: 0, vy: 0,
+            speed: 0.8 + (Math.random() * 0.5), // Slower, smoother speed
+            size: 4
+        });
+    }
 }
 
 function update() {
-    // 1. Shrink the arena slowly
-    if (arenaSize > 150) arenaSize -= 0.05;
+    // 1. Smooth Physics Movement
+    if (keys['w']) player.vy -= player.accel;
+    if (keys['s']) player.vy += player.accel;
+    if (keys['a']) player.vx -= player.accel;
+    if (keys['d']) player.vx += player.accel;
 
-    // 2. Enemy AI (Simple Pathfinding)
-    enemies.forEach(en => {
+    // Apply Friction (This makes it feel "smooth" and "glidey")
+    player.vx *= player.friction;
+    player.vy *= player.friction;
+    player.x += player.vx;
+    player.y += player.vy;
+
+    // 2. Arena Shrinking Logic
+    arenaShrink += 0.02; 
+    let currentBounds = {
+        minX: arenaShrink, maxX: canvas.width - arenaShrink,
+        minY: arenaShrink, maxY: canvas.height - arenaShrink
+    };
+
+    // 3. Enemy AI & Collision
+    enemies.forEach((en, index) => {
+        // Slow Pathfinding
         let dx = player.x - en.x;
         let dy = player.y - en.y;
-        let dist = Math.sqrt(dx*dx + dy*dy);
-        en.x += (dx / dist) * en.speed;
-        en.y += (dy / dist) * en.speed;
+        let angle = Math.atan2(dy, dx);
+        
+        en.vx = Math.cos(angle) * en.speed;
+        en.vy = Math.sin(angle) * en.speed;
+        en.x += en.vx;
+        en.y += en.vy;
 
-        // Collision detection
-        if (dist < player.size) {
-            alert("Game Over! Wave: " + wave);
-            document.location.reload();
+        // Collision Check
+        let dist = Math.hypot(player.x - en.x, player.y - en.y);
+        if (dist < player.size + en.size) {
+            gameOver();
         }
     });
 
-    draw();
+    // 4. Boundary Check (Death by Shrink)
+    if (player.x < currentBounds.minX || player.x > currentBounds.maxX ||
+        player.y < currentBounds.minY || player.y > currentBounds.maxY) {
+        gameOver();
+    }
+
+    draw(currentBounds);
+    score++;
+    document.getElementById('scoreTxt').innerText = score;
+    if (score % 1000 === 0) { wave++; spawnWave(); document.getElementById('waveTxt').innerText = wave; }
+    
     requestAnimationFrame(update);
 }
 
-function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
-    // Draw Arena Boundary
-    ctx.strokeStyle = 'red';
-    ctx.strokeRect((600 - arenaSize)/2, (600 - arenaSize)/2, arenaSize, arenaSize);
+function draw(bounds) {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)'; // Motion blur effect
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Draw Player
+    // Draw Arena
+    ctx.strokeStyle = '#ff0055';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(bounds.minX, bounds.minY, bounds.maxX - bounds.minX, bounds.maxY - bounds.minY);
+
+    // Draw Player (with Glow)
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = '#00ffcc';
     ctx.fillStyle = player.color;
-    ctx.fillRect(player.x, player.y, player.size, player.size);
+    ctx.fillRect(player.x - player.size/2, player.y - player.size/2, player.size, player.size);
 
     // Draw Enemies
-    ctx.fillStyle = 'red';
-    enemies.forEach(en => ctx.fillRect(en.x, en.y, en.size, en.size));
+    ctx.shadowColor = '#ff0055';
+    ctx.fillStyle = '#ff0055';
+    enemies.forEach(en => {
+        ctx.fillRect(en.x - en.size/2, en.y - en.size/2, en.size, en.size);
+    });
+    ctx.shadowBlur = 0;
 }
 
-// Simple Movement
-window.addEventListener('keydown', e => {
-    if (e.key === 'w') player.y -= player.speed;
-    if (e.key === 's') player.y += player.speed;
-    if (e.key === 'a') player.x -= player.speed;
-    if (e.key === 'd') player.x += player.speed;
-});
+function gameOver() {
+    alert(`SURVIVED ${wave} WAVES\nSCORE: ${score}`);
+    window.location.reload();
+}
 
-setInterval(spawnEnemy, 2000);
+spawnWave();
 update();
 </script>
 </body>
