@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Pixel Survival</title>
+    <style>
+        body { background: #111; color: white; display: flex; flex-direction: column; align-items: center; font-family: sans-serif; }
+        canvas { border: 2px solid #555; background: #000; }
+    </style>
+</head>
+<body>
+    <h1>PIXEL SURVIVAL</h1>
+    <canvas id="gameCanvas" width="600" height="600"></canvas>
+    <p>Use WASD to move. Survive the wave!</p>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+let player = { x: 300, y: 300, size: 8, speed: 4, color: '#00ff00' };
+let enemies = [];
+let arenaSize = 600;
+let wave = 1;
+let score = 0;
+
+function spawnEnemy() {
+    // Basic AI Pathfinding: They just head toward player.x, player.y
+    enemies.push({
+        x: Math.random() > 0.5 ? 0 : arenaSize,
+        y: Math.random() * arenaSize,
+        size: 6,
+        speed: 1.5 + (wave * 0.2)
+    });
+}
+
+function update() {
+    // 1. Shrink the arena slowly
+    if (arenaSize > 150) arenaSize -= 0.05;
+
+    // 2. Enemy AI (Simple Pathfinding)
+    enemies.forEach(en => {
+        let dx = player.x - en.x;
+        let dy = player.y - en.y;
+        let dist = Math.sqrt(dx*dx + dy*dy);
+        en.x += (dx / dist) * en.speed;
+        en.y += (dy / dist) * en.speed;
+
+        // Collision detection
+        if (dist < player.size) {
+            alert("Game Over! Wave: " + wave);
+            document.location.reload();
+        }
+    });
+
+    draw();
+    requestAnimationFrame(update);
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Draw Arena Boundary
+    ctx.strokeStyle = 'red';
+    ctx.strokeRect((600 - arenaSize)/2, (600 - arenaSize)/2, arenaSize, arenaSize);
+
+    // Draw Player
+    ctx.fillStyle = player.color;
+    ctx.fillRect(player.x, player.y, player.size, player.size);
+
+    // Draw Enemies
+    ctx.fillStyle = 'red';
+    enemies.forEach(en => ctx.fillRect(en.x, en.y, en.size, en.size));
+}
+
+// Simple Movement
+window.addEventListener('keydown', e => {
+    if (e.key === 'w') player.y -= player.speed;
+    if (e.key === 's') player.y += player.speed;
+    if (e.key === 'a') player.x -= player.speed;
+    if (e.key === 'd') player.x += player.speed;
+});
+
+setInterval(spawnEnemy, 2000);
+update();
+</script>
+</body>
+</html>
