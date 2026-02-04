@@ -2,236 +2,182 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>PIXEL VOID: SURVIVAL</title>
+    <title>TERMINAL ENIGMA // PROTOCOL 0</title>
     <style>
-        :root { --neon: #00f2ff; --danger: #ff0077; --bg: #0a0a0f; }
-        body { background: var(--bg); color: white; margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 100vh; }
+        :root { --neon: #00f2ff; --danger: #ff003c; --bg: #050508; }
+        body { background: var(--bg); color: white; margin: 0; font-family: 'Courier New', monospace; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 100vh; }
         
-        #game-container { position: relative; border: 2px solid #333; box-shadow: 0 0 50px rgba(0,0,0,0.5); }
-        canvas { display: block; background: radial-gradient(circle, #1a1a2e 0%, #0a0a0f 100%); }
-
-        .overlay {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            display: none; flex-direction: column; justify-content: center;
-            align-items: center; background: rgba(10, 10, 15, 0.85); backdrop-filter: blur(8px);
-            z-index: 20; text-align: center;
-        }
-
-        .hud {
-            position: absolute; top: 20px; width: 100%; display: flex;
-            justify-content: space-around; pointer-events: none;
-            font-weight: bold; letter-spacing: 2px; text-shadow: 0 0 10px var(--neon);
-        }
-
-        h1 { font-size: 3rem; margin: 0; color: var(--danger); text-shadow: 0 0 20px var(--danger); }
-        .shop-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 20px; }
+        canvas { filter: contrast(120%) brightness(110%); border: 1px solid #222; box-shadow: 0 0 40px rgba(0,0,0,1); }
         
-        button {
-            background: rgba(255, 255, 255, 0.05); border: 1px solid var(--neon);
-            color: var(--neon); padding: 15px 25px; cursor: pointer;
-            transition: all 0.2s; font-family: inherit; text-transform: uppercase;
+        /* UI Elements */
+        .hud { position: absolute; top: 20px; left: 20px; pointer-events: none; z-index: 10; }
+        .clue-tag { color: var(--neon); font-size: 18px; text-shadow: 0 0 10px var(--neon); }
+        
+        #msg-box {
+            position: absolute; bottom: 50px; left: 50%; transform: translateX(-50%);
+            width: 500px; background: rgba(0,0,0,0.8); border: 1px solid var(--neon);
+            padding: 20px; display: none; z-index: 100;
         }
-        button:hover:not(:disabled) { background: var(--neon); color: black; box-shadow: 0 0 20px var(--neon); }
-        button:disabled { border-color: #444; color: #444; cursor: not-allowed; }
+
+        /* CRT Scanline Effect */
+        .crt::before {
+            content: " "; display: block; position: absolute; top: 0; left: 0; bottom: 0; right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            z-index: 2; background-size: 100% 2px, 3px 100%; pointer-events: none;
+        }
     </style>
 </head>
-<body>
+<body class="crt">
 
-<div id="game-container">
     <div class="hud">
-        <div>WAVE: <span id="waveVal">1</span></div>
-        <div>PIXELS: <span id="scoreVal">0</span></div>
+        <div class="clue-tag">DECRYPTING: <span id="clueCount">0</span>/5 FRAGMENTS</div>
+        <div id="sys-status" style="color: #444;">STATUS: STEALTH</div>
     </div>
 
-    <div id="shop-menu" class="overlay">
-        <h1>WAVE CLEARED</h1>
-        <p>Select an Upgrade</p>
-        <div class="shop-grid">
-            <button onclick="buyUpgrade('speed')">Speed +10%<br>(Cost: 500)</button>
-            <button onclick="buyUpgrade('shrink')">Slow Shrink<br>(Cost: 800)</button>
-            <button onclick="buyUpgrade('size')">Smaller Hitbox<br>(Cost: 1000)</button>
-            <button onclick="nextWave()" style="border-color: #fff; color: #fff;">Next Wave</button>
-        </div>
+    <div id="msg-box">
+        <div style="color: var(--neon); font-size: 12px;">[DATA_FRAGMENT_EXTRACTED]</div>
+        <div id="msg-text" style="margin-top: 10px;"></div>
     </div>
 
-    <div id="death-menu" class="overlay">
-        <h1>VOIDED</h1>
-        <p id="final-stat"></p>
-        <button onclick="resetGame()">REINITIALIZE</button>
-    </div>
-
-    <canvas id="canvas"></canvas>
-</div>
+    <canvas id="mainCanvas"></canvas>
 
 <script>
-const canvas = document.getElementById('canvas');
+const canvas = document.getElementById('mainCanvas');
 const ctx = canvas.getContext('2d');
-canvas.width = 800;
-canvas.height = 600;
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
 
-// Game Vars
-let player, enemies, particles, wave, score, arenaShrink, keys, isPaused, shrinkRate;
+// Game State
+let player = { x: canvas.width/2, y: canvas.height/2, vx: 0, vy: 0, angle: 0, speed: 4 };
+let clues = [];
+let hunters = [];
+let collected = 0;
+let keys = {};
+let shake = 0;
 
 function init() {
-    player = { x: 400, y: 300, vx: 0, vy: 0, speed: 0.7, friction: 0.94, size: 8 };
-    enemies = [];
-    particles = [];
-    wave = 1;
-    score = 0;
-    arenaShrink = 0;
-    shrinkRate = 0.06;
-    keys = {};
-    isPaused = false;
-    
-    hideOverlays();
-    spawnEnemies();
-    animate();
-}
-
-function spawnEnemies() {
-    for(let i = 0; i < 4 + wave; i++) {
-        enemies.push({
-            x: Math.random() < 0.5 ? -20 : canvas.width + 20,
-            y: Math.random() * canvas.height,
-            speed: 0.4 + (Math.random() * 0.4) + (wave * 0.05),
-            size: 6
+    // Generate 5 Mystery Fragments
+    for(let i=0; i<5; i++) {
+        clues.push({
+            x: Math.random() * (canvas.width - 200) + 100,
+            y: Math.random() * (canvas.height - 200) + 100,
+            text: [
+                "SYSTEM LOG: User 'Admin' accessed files at 03:00 AM.",
+                "MEMO: The 'AI' isn't a program. It's a ghost.",
+                "WARNING: Deletion protocol failed. Sector 7 is alive.",
+                "REVEAL: I am not the player. I am the firewall.",
+                "FINAL: Close the tab. It's looking back."
+            ][i]
         });
     }
 }
 
-function createExplosion(x, y, color) {
-    for(let i=0; i<15; i++) {
-        particles.push({
-            x, y, 
-            vx: (Math.random()-0.5)*10, 
-            vy: (Math.random()-0.5)*10, 
-            life: 1.0, 
-            color
-        });
-    }
-}
-
-function buyUpgrade(type) {
-    if (score < 500) return;
-    if (type === 'speed') { player.speed += 0.15; score -= 500; }
-    if (type === 'shrink') { shrinkRate *= 0.7; score -= 800; }
-    if (type === 'size') { player.size *= 0.8; score -= 1000; }
-    updateUI();
-}
+// Movement & Input
+window.onkeydown = e => keys[e.key.toLowerCase()] = true;
+window.onkeyup = e => keys[e.key.toLowerCase()] = false;
+window.onmousemove = e => {
+    player.angle = Math.atan2(e.clientY - player.y, e.clientX - player.x);
+};
 
 function update() {
-    if (isPaused) return;
+    if(keys['w']) player.vy -= player.speed;
+    if(keys['s']) player.vy += player.speed;
+    if(keys['a']) player.vx -= player.speed;
+    if(keys['d']) player.vx += player.speed;
 
-    // Movement
-    if (keys['w'] || keys['arrowup']) player.vy -= player.speed;
-    if (keys['s'] || keys['arrowdown']) player.vy += player.speed;
-    if (keys['a'] || keys['arrowleft']) player.vx -= player.speed;
-    if (keys['d'] || keys['arrowright']) player.vx += player.speed;
+    player.vx *= 0.8; player.vy *= 0.8;
+    player.x += player.vx; player.y += player.vy;
 
-    player.vx *= player.friction;
-    player.vy *= player.friction;
-    player.x += player.vx;
-    player.y += player.vy;
-
-    arenaShrink += shrinkRate;
-
-    // Enemy AI & Particles
-    enemies.forEach((en, i) => {
-        let dx = player.x - en.x;
-        let dy = player.y - en.y;
-        let dist = Math.hypot(dx, dy);
-        en.x += (dx/dist) * en.speed;
-        en.y += (dy/dist) * en.speed;
-
-        if (dist < player.size) endGame();
+    // Check Clues
+    clues.forEach((c, i) => {
+        let dist = Math.hypot(player.x - c.x, player.y - c.y);
+        if(dist < 30) {
+            collected++;
+            document.getElementById('clueCount').innerText = collected;
+            showMsg(c.text);
+            clues.splice(i, 1);
+            spawnHunter();
+        }
     });
 
-    particles.forEach((p, i) => {
-        p.x += p.vx; p.y += p.vy; p.life -= 0.02;
-        if(p.life <= 0) particles.splice(i, 1);
+    // Hunter AI (Moves only when far or in dark)
+    hunters.forEach(h => {
+        let dist = Math.hypot(player.x - h.x, player.y - h.y);
+        h.x += (player.x - h.x) * 0.01;
+        h.y += (player.y - h.y) * 0.01;
+        if(dist < 20) location.reload(); // Game Over
+        if(dist < 150) shake = 10; else shake = 0;
     });
-
-    // Score & Wave Logic
-    score++;
-    if (score % 1200 === 0) {
-        isPaused = true;
-        document.getElementById('shop-menu').style.display = 'flex';
-    }
-
-    // Border Death
-    if (player.x < arenaShrink || player.x > canvas.width - arenaShrink || 
-        player.y < arenaShrink || player.y > canvas.height - arenaShrink) {
-        endGame();
-    }
-    updateUI();
 }
 
 function draw() {
-    ctx.fillStyle = 'rgba(10, 10, 15, 0.4)';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.clearRect(0,0,canvas.width, canvas.height);
+    
+    // Screen Shake Effect
+    if(shake > 0) {
+        ctx.translate((Math.random()-0.5)*shake, (Math.random()-0.5)*shake);
+    }
 
-    // Arena Boundary (Neon Pulse)
-    ctx.strokeStyle = `hsl(${(Date.now()/20)%360}, 70%, 50%)`;
-    ctx.lineWidth = 3;
-    ctx.strokeRect(arenaShrink, arenaShrink, canvas.width - arenaShrink*2, canvas.height - arenaShrink*2);
+    // 1. Draw "The Void" (Background)
+    ctx.fillStyle = "#050508";
+    ctx.fillRect(0,0,canvas.width, canvas.height);
 
-    // Particles
-    particles.forEach(p => {
-        ctx.fillStyle = `rgba(0, 242, 255, ${p.life})`;
-        ctx.fillRect(p.x, p.y, 2, 2);
+    // 2. The Flashlight (Ray-casting Sight)
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(player.x, player.y);
+    ctx.arc(player.x, player.y, 300, player.angle - 0.6, player.angle + 0.6);
+    ctx.lineTo(player.x, player.y);
+    ctx.clip();
+
+    // Inside the light: Draw Clues
+    ctx.fillStyle = "cyan";
+    clues.forEach(c => {
+        ctx.shadowBlur = 20; ctx.shadowColor = "cyan";
+        ctx.fillRect(c.x-10, c.y-10, 20, 20);
     });
 
-    // Player (Glow)
-    ctx.shadowBlur = 15;
-    ctx.shadowColor = '#00f2ff';
-    ctx.fillStyle = '#00f2ff';
-    ctx.fillRect(player.x - player.size/2, player.y - player.size/2, player.size, player.size);
+    // Inside the light: Draw Hunters
+    ctx.fillStyle = "red";
+    hunters.forEach(h => {
+        ctx.shadowColor = "red";
+        ctx.fillRect(h.x-15, h.y-15, 30, 30);
+    });
 
-    // Enemies
-    ctx.shadowColor = '#ff0077';
-    ctx.fillStyle = '#ff0077';
-    enemies.forEach(en => ctx.fillRect(en.x - 3, en.y - 3, 6, 6));
-    ctx.shadowBlur = 0;
+    ctx.restore();
+
+    // 3. Draw Player Pointer
+    ctx.fillStyle = "white";
+    ctx.save();
+    ctx.translate(player.x, player.y);
+    ctx.rotate(player.angle);
+    ctx.fillRect(-5, -5, 10, 10);
+    ctx.restore();
+
+    if(shake > 0) ctx.setTransform(1,0,0,1,0,0);
 }
 
-function updateUI() {
-    document.getElementById('waveVal').innerText = wave;
-    document.getElementById('scoreVal').innerText = score;
+function spawnHunter() {
+    hunters.push({ x: 0, y: 0 });
+    document.getElementById('sys-status').innerText = "STATUS: DETECTED";
+    document.getElementById('sys-status').style.color = "red";
 }
 
-function nextWave() {
-    wave++;
-    arenaShrink = 0; // Reset arena for new wave
-    spawnEnemies();
-    isPaused = false;
-    document.getElementById('shop-menu').style.display = 'none';
+function showMsg(t) {
+    const box = document.getElementById('msg-box');
+    document.getElementById('msg-text').innerText = t;
+    box.style.display = 'block';
+    setTimeout(() => { box.style.display = 'none'; }, 5000);
 }
 
-function endGame() {
-    isPaused = true;
-    createExplosion(player.x, player.y, '#ff0077');
-    document.getElementById('death-menu').style.display = 'flex';
-    document.getElementById('final-stat').innerText = `Waves Survived: ${wave} | Final Score: ${score}`;
-}
-
-function hideOverlays() {
-    document.querySelectorAll('.overlay').forEach(el => el.style.display = 'none');
-}
-
-function resetGame() { init(); }
-
-function animate() {
+function loop() {
     update();
     draw();
-    if (!isPaused || document.getElementById('shop-menu').style.display === 'flex') {
-        requestAnimationFrame(animate);
-    }
+    requestAnimationFrame(loop);
 }
 
-window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
-window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
-
 init();
+loop();
 </script>
 </body>
 </html>
