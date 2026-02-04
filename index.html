@@ -1,140 +1,237 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Pixel Survival: Advanced</title>
+    <meta charset="UTF-8">
+    <title>PIXEL VOID: SURVIVAL</title>
     <style>
-        body { background: #050505; color: #00ffcc; display: flex; flex-direction: column; align-items: center; font-family: 'Courier New', monospace; overflow: hidden; }
-        canvas { border: 1px solid #00ffcc; box-shadow: 0 0 20px #00ffcc44; background: #000; cursor: none; }
-        .stats { position: absolute; top: 10px; left: 10px; pointer-events: none; }
+        :root { --neon: #00f2ff; --danger: #ff0077; --bg: #0a0a0f; }
+        body { background: var(--bg); color: white; margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 100vh; }
+        
+        #game-container { position: relative; border: 2px solid #333; box-shadow: 0 0 50px rgba(0,0,0,0.5); }
+        canvas { display: block; background: radial-gradient(circle, #1a1a2e 0%, #0a0a0f 100%); }
+
+        .overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            display: none; flex-direction: column; justify-content: center;
+            align-items: center; background: rgba(10, 10, 15, 0.85); backdrop-filter: blur(8px);
+            z-index: 20; text-align: center;
+        }
+
+        .hud {
+            position: absolute; top: 20px; width: 100%; display: flex;
+            justify-content: space-around; pointer-events: none;
+            font-weight: bold; letter-spacing: 2px; text-shadow: 0 0 10px var(--neon);
+        }
+
+        h1 { font-size: 3rem; margin: 0; color: var(--danger); text-shadow: 0 0 20px var(--danger); }
+        .shop-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 20px; }
+        
+        button {
+            background: rgba(255, 255, 255, 0.05); border: 1px solid var(--neon);
+            color: var(--neon); padding: 15px 25px; cursor: pointer;
+            transition: all 0.2s; font-family: inherit; text-transform: uppercase;
+        }
+        button:hover:not(:disabled) { background: var(--neon); color: black; box-shadow: 0 0 20px var(--neon); }
+        button:disabled { border-color: #444; color: #444; cursor: not-allowed; }
     </style>
 </head>
 <body>
-    <div class="stats">
-        WAVE: <span id="waveTxt">1</span> | SCORE: <span id="scoreTxt">0</span>
+
+<div id="game-container">
+    <div class="hud">
+        <div>WAVE: <span id="waveVal">1</span></div>
+        <div>PIXELS: <span id="scoreVal">0</span></div>
     </div>
-    <canvas id="gameCanvas"></canvas>
+
+    <div id="shop-menu" class="overlay">
+        <h1>WAVE CLEARED</h1>
+        <p>Select an Upgrade</p>
+        <div class="shop-grid">
+            <button onclick="buyUpgrade('speed')">Speed +10%<br>(Cost: 500)</button>
+            <button onclick="buyUpgrade('shrink')">Slow Shrink<br>(Cost: 800)</button>
+            <button onclick="buyUpgrade('size')">Smaller Hitbox<br>(Cost: 1000)</button>
+            <button onclick="nextWave()" style="border-color: #fff; color: #fff;">Next Wave</button>
+        </div>
+    </div>
+
+    <div id="death-menu" class="overlay">
+        <h1>VOIDED</h1>
+        <p id="final-stat"></p>
+        <button onclick="resetGame()">REINITIALIZE</button>
+    </div>
+
+    <canvas id="canvas"></canvas>
+</div>
 
 <script>
-const canvas = document.getElementById('gameCanvas');
+const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
-canvas.width = window.innerWidth * 0.8;
-canvas.height = window.innerHeight * 0.8;
+canvas.width = 800;
+canvas.height = 600;
 
-// Game State
-let player = { 
-    x: canvas.width/2, y: canvas.height/2, 
-    vx: 0, vy: 0, 
-    accel: 0.5, friction: 0.96, 
-    size: 6, color: '#00ffcc' 
-};
-let enemies = [];
-let particles = [];
-let arenaShrink = 0;
-let frame = 0;
-let wave = 1;
-let score = 0;
-let keys = {};
+// Game Vars
+let player, enemies, particles, wave, score, arenaShrink, keys, isPaused, shrinkRate;
 
-// Input Tracking
-window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
-window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+function init() {
+    player = { x: 400, y: 300, vx: 0, vy: 0, speed: 0.7, friction: 0.94, size: 8 };
+    enemies = [];
+    particles = [];
+    wave = 1;
+    score = 0;
+    arenaShrink = 0;
+    shrinkRate = 0.06;
+    keys = {};
+    isPaused = false;
+    
+    hideOverlays();
+    spawnEnemies();
+    animate();
+}
 
-function spawnWave() {
-    for(let i = 0; i < wave * 3; i++) {
+function spawnEnemies() {
+    for(let i = 0; i < 4 + wave; i++) {
         enemies.push({
-            x: Math.random() * canvas.width,
-            y: Math.random() > 0.5 ? 0 : canvas.height,
-            vx: 0, vy: 0,
-            speed: 0.8 + (Math.random() * 0.5), // Slower, smoother speed
-            size: 4
+            x: Math.random() < 0.5 ? -20 : canvas.width + 20,
+            y: Math.random() * canvas.height,
+            speed: 0.4 + (Math.random() * 0.4) + (wave * 0.05),
+            size: 6
         });
     }
 }
 
-function update() {
-    // 1. Smooth Physics Movement
-    if (keys['w']) player.vy -= player.accel;
-    if (keys['s']) player.vy += player.accel;
-    if (keys['a']) player.vx -= player.accel;
-    if (keys['d']) player.vx += player.accel;
+function createExplosion(x, y, color) {
+    for(let i=0; i<15; i++) {
+        particles.push({
+            x, y, 
+            vx: (Math.random()-0.5)*10, 
+            vy: (Math.random()-0.5)*10, 
+            life: 1.0, 
+            color
+        });
+    }
+}
 
-    // Apply Friction (This makes it feel "smooth" and "glidey")
+function buyUpgrade(type) {
+    if (score < 500) return;
+    if (type === 'speed') { player.speed += 0.15; score -= 500; }
+    if (type === 'shrink') { shrinkRate *= 0.7; score -= 800; }
+    if (type === 'size') { player.size *= 0.8; score -= 1000; }
+    updateUI();
+}
+
+function update() {
+    if (isPaused) return;
+
+    // Movement
+    if (keys['w'] || keys['arrowup']) player.vy -= player.speed;
+    if (keys['s'] || keys['arrowdown']) player.vy += player.speed;
+    if (keys['a'] || keys['arrowleft']) player.vx -= player.speed;
+    if (keys['d'] || keys['arrowright']) player.vx += player.speed;
+
     player.vx *= player.friction;
     player.vy *= player.friction;
     player.x += player.vx;
     player.y += player.vy;
 
-    // 2. Arena Shrinking Logic
-    arenaShrink += 0.02; 
-    let currentBounds = {
-        minX: arenaShrink, maxX: canvas.width - arenaShrink,
-        minY: arenaShrink, maxY: canvas.height - arenaShrink
-    };
+    arenaShrink += shrinkRate;
 
-    // 3. Enemy AI & Collision
-    enemies.forEach((en, index) => {
-        // Slow Pathfinding
+    // Enemy AI & Particles
+    enemies.forEach((en, i) => {
         let dx = player.x - en.x;
         let dy = player.y - en.y;
-        let angle = Math.atan2(dy, dx);
-        
-        en.vx = Math.cos(angle) * en.speed;
-        en.vy = Math.sin(angle) * en.speed;
-        en.x += en.vx;
-        en.y += en.vy;
+        let dist = Math.hypot(dx, dy);
+        en.x += (dx/dist) * en.speed;
+        en.y += (dy/dist) * en.speed;
 
-        // Collision Check
-        let dist = Math.hypot(player.x - en.x, player.y - en.y);
-        if (dist < player.size + en.size) {
-            gameOver();
-        }
+        if (dist < player.size) endGame();
     });
 
-    // 4. Boundary Check (Death by Shrink)
-    if (player.x < currentBounds.minX || player.x > currentBounds.maxX ||
-        player.y < currentBounds.minY || player.y > currentBounds.maxY) {
-        gameOver();
+    particles.forEach((p, i) => {
+        p.x += p.vx; p.y += p.vy; p.life -= 0.02;
+        if(p.life <= 0) particles.splice(i, 1);
+    });
+
+    // Score & Wave Logic
+    score++;
+    if (score % 1200 === 0) {
+        isPaused = true;
+        document.getElementById('shop-menu').style.display = 'flex';
     }
 
-    draw(currentBounds);
-    score++;
-    document.getElementById('scoreTxt').innerText = score;
-    if (score % 1000 === 0) { wave++; spawnWave(); document.getElementById('waveTxt').innerText = wave; }
-    
-    requestAnimationFrame(update);
+    // Border Death
+    if (player.x < arenaShrink || player.x > canvas.width - arenaShrink || 
+        player.y < arenaShrink || player.y > canvas.height - arenaShrink) {
+        endGame();
+    }
+    updateUI();
 }
 
-function draw(bounds) {
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)'; // Motion blur effect
+function draw() {
+    ctx.fillStyle = 'rgba(10, 10, 15, 0.4)';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Draw Arena
-    ctx.strokeStyle = '#ff0055';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(bounds.minX, bounds.minY, bounds.maxX - bounds.minX, bounds.maxY - bounds.minY);
+    // Arena Boundary (Neon Pulse)
+    ctx.strokeStyle = `hsl(${(Date.now()/20)%360}, 70%, 50%)`;
+    ctx.lineWidth = 3;
+    ctx.strokeRect(arenaShrink, arenaShrink, canvas.width - arenaShrink*2, canvas.height - arenaShrink*2);
 
-    // Draw Player (with Glow)
-    ctx.shadowBlur = 10;
-    ctx.shadowColor = '#00ffcc';
-    ctx.fillStyle = player.color;
+    // Particles
+    particles.forEach(p => {
+        ctx.fillStyle = `rgba(0, 242, 255, ${p.life})`;
+        ctx.fillRect(p.x, p.y, 2, 2);
+    });
+
+    // Player (Glow)
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = '#00f2ff';
+    ctx.fillStyle = '#00f2ff';
     ctx.fillRect(player.x - player.size/2, player.y - player.size/2, player.size, player.size);
 
-    // Draw Enemies
-    ctx.shadowColor = '#ff0055';
-    ctx.fillStyle = '#ff0055';
-    enemies.forEach(en => {
-        ctx.fillRect(en.x - en.size/2, en.y - en.size/2, en.size, en.size);
-    });
+    // Enemies
+    ctx.shadowColor = '#ff0077';
+    ctx.fillStyle = '#ff0077';
+    enemies.forEach(en => ctx.fillRect(en.x - 3, en.y - 3, 6, 6));
     ctx.shadowBlur = 0;
 }
 
-function gameOver() {
-    alert(`SURVIVED ${wave} WAVES\nSCORE: ${score}`);
-    window.location.reload();
+function updateUI() {
+    document.getElementById('waveVal').innerText = wave;
+    document.getElementById('scoreVal').innerText = score;
 }
 
-spawnWave();
-update();
+function nextWave() {
+    wave++;
+    arenaShrink = 0; // Reset arena for new wave
+    spawnEnemies();
+    isPaused = false;
+    document.getElementById('shop-menu').style.display = 'none';
+}
+
+function endGame() {
+    isPaused = true;
+    createExplosion(player.x, player.y, '#ff0077');
+    document.getElementById('death-menu').style.display = 'flex';
+    document.getElementById('final-stat').innerText = `Waves Survived: ${wave} | Final Score: ${score}`;
+}
+
+function hideOverlays() {
+    document.querySelectorAll('.overlay').forEach(el => el.style.display = 'none');
+}
+
+function resetGame() { init(); }
+
+function animate() {
+    update();
+    draw();
+    if (!isPaused || document.getElementById('shop-menu').style.display === 'flex') {
+        requestAnimationFrame(animate);
+    }
+}
+
+window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
+window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+init();
 </script>
 </body>
 </html>
