@@ -2,172 +2,142 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>TERMINAL ENIGMA // PROTOCOL 0</title>
+    <title>NEON SOUL // DECRYPTOR</title>
     <style>
-        :root { --neon: #00f2ff; --danger: #ff003c; --bg: #050508; }
-        body { background: var(--bg); color: white; margin: 0; font-family: 'Courier New', monospace; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 100vh; }
+        :root { --main: #ff00ff; --cyber: #00f2ff; --bg: #050508; }
+        body { background: var(--bg); color: white; margin: 0; font-family: 'Courier New', monospace; overflow: hidden; }
         
-        canvas { filter: contrast(120%) brightness(110%); border: 1px solid #222; box-shadow: 0 0 40px rgba(0,0,0,1); }
-        
-        /* UI Elements */
-        .hud { position: absolute; top: 20px; left: 20px; pointer-events: none; z-index: 10; }
-        .clue-tag { color: var(--neon); font-size: 18px; text-shadow: 0 0 10px var(--neon); }
-        
-        #msg-box {
-            position: absolute; bottom: 50px; left: 50%; transform: translateX(-50%);
-            width: 500px; background: rgba(0,0,0,0.8); border: 1px solid var(--neon);
-            padding: 20px; display: none; z-index: 100;
+        /* Anime UI Overlay */
+        #ui-container { position: absolute; inset: 0; pointer-events: none; z-index: 10; border: 20px solid transparent; transition: 0.5s; }
+        .corner-ui { position: absolute; width: 150px; height: 150px; border: 2px solid var(--cyber); }
+        .top-left { top: 20px; left: 20px; border-right: none; border-bottom: none; }
+        .bottom-right { bottom: 20px; right: 20px; border-left: none; border-top: none; }
+
+        /* Character Portrait */
+        #avatar-box {
+            position: absolute; bottom: 0; left: 50px; width: 300px; height: 400px;
+            background: linear-gradient(to top, var(--main), transparent);
+            clip-path: polygon(0 0, 100% 20%, 100% 100%, 0% 100%);
+            display: flex; align-items: flex-end; justify-content: center;
+            transition: 0.5s; transform: translateY(100%);
+        }
+        #avatar-box.active { transform: translateY(0); }
+        .avatar-text { font-size: 80px; filter: drop-shadow(0 0 10px white); }
+
+        /* Dialogue */
+        #dialogue {
+            position: absolute; bottom: 40px; right: 50px; width: 500px;
+            background: rgba(0,0,0,0.9); border-left: 5px solid var(--main);
+            padding: 20px; display: none; pointer-events: all;
         }
 
-        /* CRT Scanline Effect */
-        .crt::before {
-            content: " "; display: block; position: absolute; top: 0; left: 0; bottom: 0; right: 0;
-            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
-            z-index: 2; background-size: 100% 2px, 3px 100%; pointer-events: none;
-        }
+        canvas { display: block; filter: saturate(1.5) contrast(1.2); }
     </style>
 </head>
-<body class="crt">
+<body>
 
-    <div class="hud">
-        <div class="clue-tag">DECRYPTING: <span id="clueCount">0</span>/5 FRAGMENTS</div>
-        <div id="sys-status" style="color: #444;">STATUS: STEALTH</div>
+    <div id="ui-container">
+        <div class="corner-ui top-left"></div>
+        <div class="corner-ui bottom-right"></div>
+        
+        <div class="hud" style="padding: 40px;">
+            <div style="color: var(--cyber); font-size: 24px; font-weight: bold;">LINK_SYNC: 98%</div>
+            <div id="score-display">DATA: 0000</div>
+        </div>
+
+        <div id="avatar-box">
+            <span class="avatar-text">👩‍🎤</span> </div>
+
+        <div id="dialogue">
+            <div style="color: var(--main); font-weight: bold;">AI_CHANNEL // HARU</div>
+            <div id="text-content">"Listen up! The firewall is closing in. Don't touch the red sectors!"</div>
+            <button onclick="startGame()" style="margin-top:10px; background:var(--main); border:none; color:white; padding:5px 15px; cursor:pointer;">CONNECT</button>
+        </div>
     </div>
 
-    <div id="msg-box">
-        <div style="color: var(--neon); font-size: 12px;">[DATA_FRAGMENT_EXTRACTED]</div>
-        <div id="msg-text" style="margin-top: 10px;"></div>
-    </div>
-
-    <canvas id="mainCanvas"></canvas>
+    <canvas id="gameCanvas"></canvas>
 
 <script>
-const canvas = document.getElementById('mainCanvas');
+const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-// Game State
-let player = { x: canvas.width/2, y: canvas.height/2, vx: 0, vy: 0, angle: 0, speed: 4 };
-let clues = [];
-let hunters = [];
-let collected = 0;
-let keys = {};
-let shake = 0;
+let player = { x: canvas.width/2, y: canvas.height/2, size: 8, vx: 0, vy: 0 };
+let enemies = [];
+let frames = 0;
+let score = 0;
+let active = false;
 
-function init() {
-    // Generate 5 Mystery Fragments
-    for(let i=0; i<5; i++) {
-        clues.push({
-            x: Math.random() * (canvas.width - 200) + 100,
-            y: Math.random() * (canvas.height - 200) + 100,
-            text: [
-                "SYSTEM LOG: User 'Admin' accessed files at 03:00 AM.",
-                "MEMO: The 'AI' isn't a program. It's a ghost.",
-                "WARNING: Deletion protocol failed. Sector 7 is alive.",
-                "REVEAL: I am not the player. I am the firewall.",
-                "FINAL: Close the tab. It's looking back."
-            ][i]
-        });
-    }
+// Show Anime Intro
+setTimeout(() => {
+    document.getElementById('avatar-box').classList.add('active');
+    document.getElementById('dialogue').style.display = 'block';
+}, 500);
+
+function startGame() {
+    document.getElementById('dialogue').style.display = 'none';
+    active = true;
+    spawnEnemy();
 }
 
-// Movement & Input
-window.onkeydown = e => keys[e.key.toLowerCase()] = true;
-window.onkeyup = e => keys[e.key.toLowerCase()] = false;
-window.onmousemove = e => {
-    player.angle = Math.atan2(e.clientY - player.y, e.clientX - player.x);
-};
+function spawnEnemy() {
+    if(!active) return;
+    enemies.push({
+        x: Math.random() * canvas.width,
+        y: -20,
+        speed: 3 + Math.random() * 5
+    });
+    setTimeout(spawnEnemy, 1000 - (score * 5));
+}
 
 function update() {
-    if(keys['w']) player.vy -= player.speed;
-    if(keys['s']) player.vy += player.speed;
-    if(keys['a']) player.vx -= player.speed;
-    if(keys['d']) player.vx += player.speed;
+    if(!active) return;
 
-    player.vx *= 0.8; player.vy *= 0.8;
-    player.x += player.vx; player.y += player.vy;
+    // Movement (Mouse follow for that smooth anime "Slash" feel)
+    window.onmousemove = (e) => {
+        player.x += (e.clientX - player.x) * 0.1;
+        player.y += (e.clientY - player.y) * 0.1;
+    };
 
-    // Check Clues
-    clues.forEach((c, i) => {
-        let dist = Math.hypot(player.x - c.x, player.y - c.y);
-        if(dist < 30) {
-            collected++;
-            document.getElementById('clueCount').innerText = collected;
-            showMsg(c.text);
-            clues.splice(i, 1);
-            spawnHunter();
+    enemies.forEach((en, i) => {
+        en.y += en.speed;
+        if(en.y > canvas.height) {
+            enemies.splice(i, 1);
+            score += 10;
+            document.getElementById('score-display').innerText = "DATA: " + score.toString().padStart(4, '0');
         }
-    });
 
-    // Hunter AI (Moves only when far or in dark)
-    hunters.forEach(h => {
-        let dist = Math.hypot(player.x - h.x, player.y - h.y);
-        h.x += (player.x - h.x) * 0.01;
-        h.y += (player.y - h.y) * 0.01;
-        if(dist < 20) location.reload(); // Game Over
-        if(dist < 150) shake = 10; else shake = 0;
+        // Collision
+        let d = Math.hypot(player.x - en.x, player.y - en.y);
+        if(d < 15) location.reload();
     });
 }
 
 function draw() {
-    ctx.clearRect(0,0,canvas.width, canvas.height);
+    // Cyberpunk Grid Background
+    ctx.fillStyle = "#050508";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
     
-    // Screen Shake Effect
-    if(shake > 0) {
-        ctx.translate((Math.random()-0.5)*shake, (Math.random()-0.5)*shake);
+    ctx.strokeStyle = "#111";
+    for(let i=0; i<canvas.width; i+=40) {
+        ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke();
     }
 
-    // 1. Draw "The Void" (Background)
-    ctx.fillStyle = "#050508";
-    ctx.fillRect(0,0,canvas.width, canvas.height);
+    // Draw Player (Neon Trail)
+    ctx.shadowBlur = 20;
+    ctx.shadowColor = "#ff00ff";
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(player.x-5, player.y-5, 10, 10);
 
-    // 2. The Flashlight (Ray-casting Sight)
-    ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(player.x, player.y);
-    ctx.arc(player.x, player.y, 300, player.angle - 0.6, player.angle + 0.6);
-    ctx.lineTo(player.x, player.y);
-    ctx.clip();
-
-    // Inside the light: Draw Clues
-    ctx.fillStyle = "cyan";
-    clues.forEach(c => {
-        ctx.shadowBlur = 20; ctx.shadowColor = "cyan";
-        ctx.fillRect(c.x-10, c.y-10, 20, 20);
+    // Draw Enemies (Falling Glitches)
+    ctx.shadowColor = "#00f2ff";
+    ctx.fillStyle = "#00f2ff";
+    enemies.forEach(en => {
+        ctx.fillRect(en.x, en.y, 4, 20);
     });
-
-    // Inside the light: Draw Hunters
-    ctx.fillStyle = "red";
-    hunters.forEach(h => {
-        ctx.shadowColor = "red";
-        ctx.fillRect(h.x-15, h.y-15, 30, 30);
-    });
-
-    ctx.restore();
-
-    // 3. Draw Player Pointer
-    ctx.fillStyle = "white";
-    ctx.save();
-    ctx.translate(player.x, player.y);
-    ctx.rotate(player.angle);
-    ctx.fillRect(-5, -5, 10, 10);
-    ctx.restore();
-
-    if(shake > 0) ctx.setTransform(1,0,0,1,0,0);
-}
-
-function spawnHunter() {
-    hunters.push({ x: 0, y: 0 });
-    document.getElementById('sys-status').innerText = "STATUS: DETECTED";
-    document.getElementById('sys-status').style.color = "red";
-}
-
-function showMsg(t) {
-    const box = document.getElementById('msg-box');
-    document.getElementById('msg-text').innerText = t;
-    box.style.display = 'block';
-    setTimeout(() => { box.style.display = 'none'; }, 5000);
+    
+    ctx.shadowBlur = 0;
 }
 
 function loop() {
@@ -176,7 +146,6 @@ function loop() {
     requestAnimationFrame(loop);
 }
 
-init();
 loop();
 </script>
 </body>
